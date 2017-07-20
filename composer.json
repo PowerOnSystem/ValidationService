@@ -1,7 +1,7 @@
 {
     "name": "poweronsystem/validationservice",
     "type": "library",
-    "description": "Servicio de validaci�n de campos universal.",
+    "description": "Servicio de validacion de campos universal.",
     "keywords": ["validation", "validator", "validation rules"],
     "homepage": "https://github.com/poweronsystem/validationservice",
     "license": "GPL",
@@ -16,7 +16,7 @@
     "require": {
         "php": ">=5.4",
         "fightbulc/moment": "^1.26",
-        "poweronsystem/utility": "dev-master"
+        "poweronsystem/webutility": "^0.1.0"
     },
     "require-dev": {
         "kint-php/kint": "^2.1"
@@ -25,11 +25,5 @@
         "psr-4": {
             "PowerOn\\Validation\\": "src"
         }
-    },
-    "autoload-dev": {
-        "psr-4": {
-            "App\\": "test"
-        }
     }
-    
 }
