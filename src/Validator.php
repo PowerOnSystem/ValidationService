@@ -275,7 +275,7 @@ class Validator {
      * @throws ValidatorException
      */
     public function validMinSize($value, $param) {
-        if ( $value && $value< $param ) {
+        if ( $value && $value < $param ) {
             if ($this->_config['return_boolean']) {
                 return FALSE;
             } else {
@@ -488,7 +488,7 @@ class Validator {
      * @throws ValidatorException
      */
     public function validMaxVal($value, $param) {
-        if ( $value > $param) {
+        if ( $value !== NULL && $value > $param) {
             if ($this->_config['return_boolean']) {
                 return FALSE;
             } else {
@@ -506,7 +506,7 @@ class Validator {
      * @throws ValidatorException
      */
     public function validMinVal($value, $param) {
-        if ( $value < $param ) {
+        if ( $value !== NULL && $value < $param ) {
             if ($this->_config['return_boolean']) {
                 return FALSE;
             } else {
@@ -524,7 +524,7 @@ class Validator {
      * @throws ValidatorException
      */
     public function validExactVal($value, $param) {
-        if ( $value != $param ) {
+        if ( $value !== NULL && $value != $param ) {
             if ($this->_config['return_boolean']) {
                 return FALSE;
             } else {
@@ -618,9 +618,9 @@ class Validator {
                         $this->{$function} ( $values[$field], $rule->param );  
                     }
                 } catch (ValidatorException $e) {
-                    $param = is_object($rule->param) ? 'callback' : (is_array($rule->param) ? Str::natjoin($rule->param) : NULL);
+                    $param = is_object($rule->param) ? 'callback' : (is_array($rule->param) ? Str::natjoin($rule->param) : $rule->param);
                     $message = preg_replace(['/\{field\}/', '/\{value\}/', '/\{param\}/'],
-                            [$field, $values[$field], $param], $rule->message ? $rule->message : $e->getMessage());
+                            [$field, $values[$field], (string)$param], $rule->message ? $rule->message : $e->getMessage());
                     switch ($rule->level) {
                         case Rule::ERROR    :
                             $this->_errors[$field] = $message;

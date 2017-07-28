@@ -29,6 +29,7 @@ class ValidatorException extends \Exception {
     
     public function __construct($rule, $add_message = NULL) {
         Lang::configure(Lang::STRICT_MODE);
+        Lang::load('validation', NULL, dirname(dirname(__FILE__)) . DIRECTORY_SEPARATOR . 'langs');
         parent::__construct(Lang::get('validation.valid_' . $rule) . ($add_message ? ' ' . $add_message : ''));
     }
 }
