@@ -1,7 +1,7 @@
 <?php
 
 /*
- * Copyright (C) PowerOn Sistemas
+ * Copyright (C) PowerOn Sistemas - Lucas Sosa
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,10 +26,18 @@ use PowerOn\Utility\Lang;
  * @copyright (c) 2016, Lucas Sosa
  */
 class ValidatorException extends \Exception {
+    /**
+     * Nombre del error de regla
+     * @var string
+     */
+    private $rule;
     
     public function __construct($rule, $add_message = NULL) {
-        Lang::configure(Lang::STRICT_MODE);
-        Lang::load('validation', NULL, dirname(dirname(__FILE__)) . DIRECTORY_SEPARATOR . 'langs');
+        $this->rule = $rule;
         parent::__construct(Lang::get('validation.valid_' . $rule) . ($add_message ? ' ' . $add_message : ''));
+    }
+    
+    public function getName() {
+        return $this->rule;
     }
 }

@@ -19,7 +19,6 @@
 
 namespace PowerOn\Validation;
 
-use Moment\Moment;
 use PowerOn\Utility\Inflector;
 use PowerOn\Utility\Str;
 use PowerOn\Utility\Lang;
@@ -32,37 +31,55 @@ use PowerOn\Utility\Lang;
 class Validator {
     /**
      * Reglas
-     * @var Rule
+     * @var Rule[]
      */
-    private $_rules = [];
+    private $rules = [];
     /**
      * Error del validador
      * @var array 
      */
-    private $_errors = [];
+    private $errors = [];
     /**
      * Advertencia del validador
      * @var string 
      */
-    private $_warnings = [];
+    private $warnings = [];
     /**
      * Configuración del validador
      * @var array
      */
-    private $_config = [];
-
+    private $config = [];
+    /**
+     * Valores a verificar
+     * @var array
+     */
+    private $values = [];
     /**
      * Crea un objeto validador de datos
-     * @param array $config Parámetros para configurar el validador<pre><ul>
-     *  <li><b>return_boolean</b>: (boolean) Especifica si las validaciones solo devuelven un valor booleano</li>
-     *  <li><b>date_format</b>: (string) Especifica el formato de fecha que se utiliza</li>
-     * </ul></pre>
+     * @param array $config Parámetros para configurar el validador
+     * <table border=1>
+     *  <tr><td><b>return_boolean</b></td><td> (boolean) false</td>
+     *   <td>Especifica si las validaciones solo devuelven un valor booleano</td></tr>
+     *  <tr><td><b>date_format</b></td><td> (string) d/m/Y</td><td> Especifica el formato de fecha que se utiliza</td>
+     *  <tr><td><b>date_time_format</b></td><td> (string) d/m/Y H:i</td><td> Especifica el formato de fecha y hora que se utiliza</td>
+     *  <tr><td><b>time_format</b></td><td> (string) H:i</td><td> Especifica el formato de hora que se utiliza</td>
+     *  <tr><td><b>langs_dir</b></td><td> (string) ./langs </td>
+     *   <td>Directorio donde estan almacenados los lenguajes del validador</td>
+     *  <tr><td><b>lang</b></td><td> (string) es</td>
+     *   <td> Lenguaje del validador, debe existir el archivo {langs_dir}/validation.{lang}.php</td>
+     * </table>
      */
     public function __construct(array $config = []) {
-        $this->_config = $config + [
+        $this->config = $config + [
             'return_boolean' => FALSE,
-            'date_format' => NULL
+            'date_format' => 'd/m/Y',
+            'date_time_format' => 'd/m/Y H:i',
+            'time_format' => 'H:i',
+            'langs_dir' => dirname(__DIR__) . DIRECTORY_SEPARATOR . 'langs' . DIRECTORY_SEPARATOR,
+            'lang' => 'es'
         ];
+        
+        Lang::load('validation', $this->config['lang'], $this->config['langs_dir']);
     }
     
     /**
@@ -178,7 +195,7 @@ class Validator {
             }
         }
                 
-        if ($errors && $this->_config['return_boolean']) {
+        if ($errors && $this->config['return_boolean']) {
             return FALSE;
         } else if ($errors) {
             $translated_errors = [];
@@ -220,9 +237,11 @@ class Validator {
      * @return boolean
      * @throws ValidatorException
      */
-    public function validRequired($value) {
-        if ( !$value && $value !== '0' ) {
-            if ($this->_config['return_boolean']) {
+    public function validRequired($value, $param, $return_boolean = FALSE) {
+        if ( $param && ((is_array($value) && !array_filter($value))
+                || (!$value && $value !== '0')) 
+            ) {
+            if ($this->config['return_boolean'] || $return_boolean) {
                 return FALSE;
             } else {
                 throw new ValidatorException('required');
@@ -232,15 +251,78 @@ class Validator {
     }
     
     /**
-     * Realiza una validación personalizada
+     * Valida que el valor no sea nulo
      * @param mix $value Valor a verificar
-     * @param object $param Función callback
      * @return boolean
      * @throws ValidatorException
      */
-    public function validCustom($value, $param) {
-        if ( !$param($value) ) {
-            if ($this->_config['return_boolean']) {
+    public function validNumber($value, $param) {
+        if ( $value && $param && !is_numeric($value)) {
+            if ($this->config['return_boolean']) {
+                return FALSE;
+            } else {
+                throw new ValidatorException('number');
+            }
+        }
+        return TRUE;
+    }
+    
+    /**
+     * Valida que el valor no sea nulo
+     * @param mix $value Valor a verificar
+     * @return boolean
+     * @throws ValidatorException
+     */
+    public function validDecimal($value, $param) {
+        $expr = '/^[0-9]+\.' . (is_numeric($param) ? '[0-9]{' . $param . '}' : '[0-9]+') . '$/';
+        if ( $value && $param && !preg_match($expr, $value) ) {
+            if ($this->config['return_boolean']) {
+                return FALSE;
+            } else {
+                throw new ValidatorException('decimal');
+            }
+        }
+        return TRUE;
+    }
+    
+    /**
+     * Verifica que dos o más valores no sean nulos simultaneamente
+     * @param string $value Valor del primer campo
+     * @param string|array $param Valor de los campos subsiguientes
+     * @return boolean
+     * @throws ValidatorException
+     */
+    public function validRequiredEither($value, $param) {
+        if ( !$this->validRequired($value, TRUE, TRUE) 
+                && (
+                    (is_array($param) && !array_filter($param, function($p){ 
+                        return key_exists($p, $this->values) && $this->validRequired($this->values[$p], TRUE, TRUE);
+                    }))
+                    || (
+                        !is_array($param) 
+                        && (!key_exists($param, $this->values) || !$this->validRequired($this->values[$param], TRUE, TRUE)) 
+                    ) 
+                )
+        ) {
+            if ($this->config['return_boolean']) {
+                return FALSE;
+            } else {
+                throw new ValidatorException('required_either');
+            }
+        }
+        return TRUE;
+    }
+    
+    /**
+     * Realiza una validación personalizada
+     * @param mix $value Valor a verificar
+     * @param callable $param Función callback
+     * @return boolean
+     * @throws ValidatorException
+     */
+    public function validCustom($value, callable $param) {
+        if ( !$param($value, $this->values) ) {
+            if ($this->config['return_boolean']) {
                 return FALSE;
             } else {
                 throw new ValidatorException('custom');
@@ -258,7 +340,7 @@ class Validator {
      */
     public function validUnique($value, $param) {
         if ( in_array($value, $param) ) {
-            if ($this->_config['return_boolean']) {
+            if ($this->config['return_boolean']) {
                 return FALSE;
             } else {
                 throw new ValidatorException('unique');
@@ -269,17 +351,29 @@ class Validator {
     
     /**
      * Valida que el valor sea mayor a parámetro dado
-     * @param integer $value Valor a verificar
-     * @param integer $param Valor mínimo
+     * @param integer $file Valor a verificar
+     * @param integer $param Valor mínimo en bytes
      * @return boolean
      * @throws ValidatorException
      */
-    public function validMinSize($value, $param) {
-        if ( $value && $value < $param ) {
-            if ($this->_config['return_boolean']) {
+    public function validMinSize($file, $param) {
+        if ( is_array($file) && is_numeric(key($file)) ){
+            $result = TRUE;
+            foreach ($file as $f) {
+                $result = $this->validMinSize($f, $param);
+                if (!$result) {
+                    break;
+                }
+            }
+            
+            return $result;
+        }
+        
+        if ( !is_array($file) || !key_exists('size', $file) || $file['size'] < $param ) {
+            if ($this->config['return_boolean']) {
                 return FALSE;
             } else {
-                throw new ValidatorException('min_size', Str::bytestostr($param) . '.');
+                throw new ValidatorException('min_size');
             }
         }
         return TRUE;
@@ -287,17 +381,29 @@ class Validator {
     
     /**
      * Valida que el valor sea menor a parámetro dado
-     * @param integer $value Valor a verificar
-     * @param integer $param Valor máximo
+     * @param integer $file Valor a verificar
+     * @param integer $param Valor máximo en bytes
      * @return boolean
      * @throws ValidatorException
      */
-    public function validMaxSize($value, $param) {
-        if ( $value && $value > $param ) {
-            if ($this->_config['return_boolean']) {
+    public function validMaxSize($file, $param) {
+        if ( is_array($file) && is_numeric(key($file)) ){
+            $result = TRUE;
+            foreach ($file as $f) {
+                $result = $this->validMaxSize($f, $param);
+                if (!$result) {
+                    break;
+                }
+            }
+            
+            return $result;
+        }
+        
+        if ( !is_array($file) || !key_exists('size', $file) || $file['size'] > $param ) {
+            if ($this->config['return_boolean']) {
                 return FALSE;
             } else {
-                throw new ValidatorException('max_size', Str::bytestostr($param) . '.');
+                throw new ValidatorException('max_size');
             }
         }
         return TRUE;
@@ -305,16 +411,41 @@ class Validator {
     
     /**
      * Valida la subida de un archivo
-     * @param mix $value Error entregado por el archivo subido
+     * @param mix $file Error entregado por el archivo subido
      * @return boolean
      * @throws ValidatorException
      */
-    public function validUpload($value) {
-        if ( $value ) {
-            if ($this->_config['return_boolean']) {
+    public function validUpload($file, $param) {
+        if (!$file || !$param) {
+            return TRUE;
+        }
+        
+        if ( is_array($file) && is_numeric(key($file)) ) {
+            $return = TRUE;
+            foreach ($file as $f) {
+                $return = $this->validUpload($f, $param);
+                if (!$return) {
+                    break;
+                }
+            }
+            
+            return $return;
+        }
+        
+        if ( !is_array($file) 
+                || !key_exists('tmp_name', $file)
+                || !file_exists($file['tmp_name'])
+                || !key_exists('error', $file)
+                || $file['error']
+        ) {
+            if ($this->config['return_boolean']) {
                 return FALSE;
             } else {
-                throw new ValidatorException('upload', Lang::get('validation.valid_upload_error_' . $value));
+                throw new ValidatorException(
+                    !is_array($file) || !key_exists('error', $file) || !$file['error']
+                        ? 'upload'
+                        : 'upload_error_' . $file['error']
+                );
             }
         }
         return TRUE;
@@ -322,14 +453,39 @@ class Validator {
     
     /**
      * Valida que la extensión sea aceptada
-     * @param string $value Extensión
-     * @param array $param Extensiones permitidas
+     * @param string $file Archivo subido
+     * @param string|array $param Extensiones permitidas
      * @return boolean
      * @throws ValidatorException
      */
-    public function validExtension($value, array $param) {
-        if ( $value && !in_array($value, $param) ) {
-            if ($this->_config['return_boolean']) {
+    public function validExtension($file, $param) {
+        if (!$file) {
+            return TRUE;
+        }
+        
+        if ( is_array($file) && is_numeric(key($file)) ){
+            $result = TRUE;
+            foreach ($file as $f) {
+                $result = $this->validExtension($f, $param);
+                if (!$result) {
+                    break;
+                }
+            }
+            
+            return $result;
+        }
+        
+        $extension = NULL;
+        if ( is_array($file) && key_exists('name', $file) ) {
+            $extension = pathinfo($file['name'], PATHINFO_EXTENSION);
+            d($extension);
+        }
+                
+        if ( !$extension 
+                || (is_array($param) && !in_array($extension, $param)) 
+                || (!is_array($param) && $extension != $param) 
+        ) {
+            if ($this->config['return_boolean']) {
                 return FALSE;
             } else {
                 throw new ValidatorException('extension');
@@ -337,25 +493,7 @@ class Validator {
         }
         return TRUE;
     }
-    
-    /**
-     * Verifica que dos valores no sean nulos simultaneamente
-     * @param string $value Valor del primer campo
-     * @param string $param Valor del segundo campo
-     * @return boolean
-     * @throws ValidatorException
-     */
-    public function validRequiredEither($value, $param) {
-        if ( !$value && $param ) {
-            if ($this->_config['return_boolean']) {
-                return FALSE;
-            } else {
-                throw new ValidatorException('required_either');
-            }
-        }
-        return TRUE;
-    }
-    
+        
     /**
      * Valida una dirección de correo electrónico
      * @param string $value Correo electrónico
@@ -364,7 +502,7 @@ class Validator {
      */
     public function validEmail($value) {
         if ( $value && !preg_match('/^[_a-z0-9-]+(\.[_a-z0-9-]+)*@[a-z0-9-]+(\.[a-z0-9-]+)*(\.[a-z]{2,3})$/', $value) ) {
-            if ($this->_config['return_boolean']) {
+            if ($this->config['return_boolean']) {
                 return FALSE;
             } else {
                 throw new ValidatorException('email');
@@ -381,7 +519,7 @@ class Validator {
      */
     public function validUrl($value) {
         if ( $value && !preg_match('/^([a-z0-9\.-]+)\.([a-z\.]{2,6})([\/\w\?=.-]*)*\/?$/i', $value) ) {
-            if ($this->_config['return_boolean']) {
+            if ($this->config['return_boolean']) {
                 return FALSE;
             } else {
                 throw new ValidatorException('url');
@@ -398,8 +536,13 @@ class Validator {
      * @throws ValidatorException
      */
     public function validOptions($value, array $param) {
-        if ( $value && !in_array($value, $param) && !key_exists($value, $param) ) {
-            if ($this->_config['return_boolean']) {
+        if ( $value && 
+                ( 
+                    (is_array($value) && count(array_intersect($value, $param)) != count($value))
+                    || (!is_array($value) && !in_array($value, $param))
+                )
+        ) {
+            if ($this->config['return_boolean']) {
                 return FALSE;
             } else {
                 throw new ValidatorException('options');
@@ -417,7 +560,7 @@ class Validator {
      */
     public function validCompare($value, $param) {
         if ( $value != $param ) {
-            if ($this->_config['return_boolean']) {
+            if ($this->config['return_boolean']) {
                 return FALSE;
             } else {
                 throw new ValidatorException('compare');
@@ -435,7 +578,7 @@ class Validator {
      */
     public function validMinLength($value, $param) {
         if ( $value && strlen($value) < $param ) {
-            if ($this->_config['return_boolean']) {
+            if ($this->config['return_boolean']) {
                 return FALSE;
             } else {
                 throw new ValidatorException('min_length');
@@ -453,7 +596,7 @@ class Validator {
      */
     public function validMaxLength($value, $param) {
         if ( $value && strlen($value) > $param ) {
-            if ($this->_config['return_boolean']) {
+            if ($this->config['return_boolean']) {
                 return FALSE;
             } else {
                 throw new ValidatorException('max_length');
@@ -471,10 +614,28 @@ class Validator {
      */
     public function validExactLength($value, $param) {
         if ( $value && strlen($value) != $param ) {
-            if ($this->_config['return_boolean']) {
+            if ($this->config['return_boolean']) {
                 return FALSE;
             } else {
                 throw new ValidatorException('exact_length');
+            }
+        }
+        return TRUE;
+    }
+    
+    /**
+     * Verifica que la cantidad de caracteres sea igual a la establecida en los parámetros
+     * @param string $value Valor a verificar
+     * @param array $param Rango de caracteres
+     * @return boolean
+     * @throws ValidatorException
+     */
+    public function validRangeLength($value, $param) {
+        if ( $value && (strlen($value) < $param[0] || strlen($value) > $param[1]) ) {
+            if ($this->config['return_boolean']) {
+                return FALSE;
+            } else {
+                throw new ValidatorException('range_length');
             }
         }
         return TRUE;
@@ -489,7 +650,7 @@ class Validator {
      */
     public function validMaxVal($value, $param) {
         if ( $value !== NULL && $value > $param) {
-            if ($this->_config['return_boolean']) {
+            if ($this->config['return_boolean']) {
                 return FALSE;
             } else {
                 throw new ValidatorException('max_val');
@@ -507,7 +668,7 @@ class Validator {
      */
     public function validMinVal($value, $param) {
         if ( $value !== NULL && $value < $param ) {
-            if ($this->_config['return_boolean']) {
+            if ($this->config['return_boolean']) {
                 return FALSE;
             } else {
                 throw new ValidatorException('min_val');
@@ -525,10 +686,28 @@ class Validator {
      */
     public function validExactVal($value, $param) {
         if ( $value !== NULL && $value != $param ) {
-            if ($this->_config['return_boolean']) {
+            if ($this->config['return_boolean']) {
                 return FALSE;
             } else {
                 throw new ValidatorException('exact_val');
+            }
+        }
+        return TRUE;
+    }
+    
+    /**
+     * Verifica que el valor sea igual al establecido en los parámetros
+     * @param int $value Valor a verificar
+     * @param array $param Rango a comparar
+     * @return boolean
+     * @throws ValidatorException
+     */
+    public function validRangeVal($value, $param) {
+        if ( $value !== NULL && ($value < $param[0] || $value > $param[1])  ) {
+            if ($this->config['return_boolean']) {
+                return FALSE;
+            } else {
+                throw new ValidatorException('range_val');
             }
         }
         return TRUE;
@@ -541,14 +720,13 @@ class Validator {
      * @return boolean
      * @throws ValidatorException
      */
-    public function validMaxDate($value, $param) {
-        $date = $this->validDate($value);
-        if ( $value && $date->isAfter($param) ) {
-            if ($this->_config['return_boolean']) {
+    public function validMaxDate($value, $param, $format = NULL, $exception = 'date') {
+        $date = $this->validDate($value, $format ?: $this->config['date_format'], $exception);
+        if ( $value && $date > $param ) {
+            if ($this->config['return_boolean']) {
                 return FALSE;
             } else {
-                $date_param = new Moment($param);
-                throw new ValidatorException('max_date', $date_param->format($this->_config['date_format']));
+                throw new ValidatorException('max_' . $exception);
             }
         }
         return TRUE;
@@ -561,48 +739,245 @@ class Validator {
      * @return boolean
      * @throws ValidatorException
      */
-    public function validMinDate($value, $param) {
-        $date = $this->validDate($value);
-        if ( $value && $date->isBefore($param) ) {
-            if ($this->_config['return_boolean']) {
+    public function validMinDate($value, $param, $format = NULL, $exception = 'date') {
+        $date = $this->validDate($value, $format ?: $this->config['date_format'], $exception);
+        if ( $value && $date < $param ) {
+            if ($this->config['return_boolean']) {
                 return FALSE;
             } else {
-                $date_param = new Moment($param);
-                throw new ValidatorException('min_date', $date_param->format($this->_config['date_format']));
+                
+                throw new ValidatorException('min_' . $exception);
             }
         }
         return TRUE;
     }
     
     /**
-     * Verifica que la fecha esté en un formato correcto
+     * Verifica que la fecha sea mayor a la establecida en los parámetros
      * @param string $value Fecha a verificar
+     * @param string $param Fecha mínima
      * @return boolean
      * @throws ValidatorException
      */
-    public function validDate($value) {
-        if ( $value ) {
-            try {
-                return new Moment($value);
-            } catch (\Moment\MomentException $ex) {
-                if ($this->_config['return_boolean']) {
-                    return FALSE;
-                } else {
-                    $ex->getMessage();
-                    throw new ValidatorException('date');
-                }
-            } catch (\Exception $e) {
-                if ($this->_config['return_boolean']) {
-                    return FALSE;
-                } else {
-                    $e->getMessage();
-                    throw new ValidatorException('date');
-                }
+    public function validMinDateTime($value, $param) {
+        return $this->validMinDate($value, $param, $this->config['date_time_format'], 'date_time');
+    }
+    
+    /**
+     * Verifica que la fecha sea menor a la establecida en los parámetros
+     * @param string $value Fecha a verificar
+     * @param string $param Fecha maxima
+     * @return boolean
+     * @throws ValidatorException
+     */
+    public function validMaxDateTime($value, $param) {
+        return $this->validMaxDate($value, $param, $this->config['date_time_format'], 'date_time');
+    }
+    
+    /**
+     * Verifica que la fecha sea mayor a la establecida en los parámetros
+     * @param string $value Fecha a verificar
+     * @param string $param Fecha mínima
+     * @return boolean
+     * @throws ValidatorException
+     */
+    public function validMinTime($value, $param) {
+        return $this->validMinDate($value, $param, $this->config['time_format'], 'time');
+    }
+    
+    /**
+     * Verifica que la fecha sea menor a la establecida en los parámetros
+     * @param string $value Fecha a verificar
+     * @param string $param Fecha maxima
+     * @return boolean
+     * @throws ValidatorException
+     */
+    public function validMaxTime($value, $param) {
+        return $this->validMaxDate($value, $param, $this->config['time_format'], 'time');
+    }
+    
+    /**
+     * Verifica que la fecha este en un rango establecido en los parámetros
+     * @param string $value Fecha a verificar
+     * @param array $param Rango de fechas
+     * @return boolean
+     * @throws ValidatorException
+     */
+    public function validRangeDate($value, $param, $format = NULL, $exception = 'date') {
+        $date = $this->validDate($value, $format ?: $this->config['date_format'], $exception);
+        if ( $value && ($date < $param[0] || $date > $param[1]) ) {
+            if ($this->config['return_boolean']) {
+                return FALSE;
+            } else {
+                throw new ValidatorException('range_' . $exception);
             }
         }
         return TRUE;
     }
-
+    
+    /**
+     * Verifica que la fecha este en un rango establecido en los parámetros
+     * @param string $value Fecha a verificar
+     * @param array $param Rango de fechas
+     * @return boolean
+     * @throws ValidatorException
+     */
+    public function validRangeDateTime($value, $param) {
+        return $this->validRangeDate($value, $param, $this->config['date_time_format'], 'date_time');
+    }
+    
+    /**
+     * Verifica que la fecha este en un rango establecido en los parámetros
+     * @param string $value Fecha a verificar
+     * @param array $param Rango de fechas
+     * @return boolean
+     * @throws ValidatorException
+     */
+    public function validRangeTime($value, $param) {
+        return $this->validRangeDate($value, $param, $this->config['time_format'], 'time');
+    }
+    
+    /**
+     * Verifica que la fecha esté en un formato correcto
+     * @param string $value Fecha a verificar
+     * @return \DateTime
+     * @throws ValidatorException
+     */
+    public function validDate($value, $format, $exception = 'date', $return_boolean = FALSE) {
+        if ( $value ) {
+            $date = \DateTime::createFromFormat($format, $value);
+            if (!$date && ($this->config['return_boolean'] || $return_boolean)) {
+                    return FALSE;
+            } else if (!$date) {
+                throw new ValidatorException($exception);
+            }
+            
+            return $date;
+        }
+        return TRUE;
+    }
+    
+    /**
+     * Verifica que la fecha sea mayor a la fecha de un campo dado
+     * @param string $value Fecha del campo
+     * @param string $param Nombre del campo a obtener la fecha
+     * @return \DateTime
+     * @throws ValidatorException
+     */
+    public function validMinDateField($value, $param, $format = NULL, $exception = 'date') {
+        $date2 = $this->validDate(
+            key_exists($param, $this->values) ? $this->values[$param] : NULL, 
+            $format ?: $this->config['date_format'], 
+            $exception, 
+            TRUE
+        );
+        
+        if ( !$date2 ) {
+            if ($this->config['return_boolean']) {
+                return FALSE;
+            } else {
+                throw new ValidatorException($exception . '_field');
+            }
+        }
+        
+        try {
+            return $this->validMinDate($value, $date2, $format, $exception);
+        } catch (ValidatorException $e) {
+            throw new ValidatorException($e->getName() != $exception ? 'min_' . $exception . '_field' : $exception);
+        }
+    }
+    
+    /**
+     * Verifica que la fecha sea menor a la fecha de un campo dado
+     * @param string $value Fecha del campo
+     * @param string $param Nombre del campo a obtener la fecha
+     * @return \DateTime
+     * @throws ValidatorException
+     */
+    public function validMaxDateField($value, $param, $format = NULL, $exception = 'date') {
+        $date2 = $this->validDate(
+            key_exists($param, $this->values) ? $this->values[$param] : NULL, 
+            $format ?: $this->config['date_format'], 
+            $exception, 
+            TRUE
+        );
+        
+        if ( !$date2 ) {
+            if ($this->config['return_boolean']) {
+                return FALSE;
+            } else {
+                throw new ValidatorException($exception . '_field');
+            }
+        }
+        
+        try {
+            return $this->validMaxDate($value, $date2, $format, $exception);
+        } catch (ValidatorException $e) {
+            throw new ValidatorException('max_' . $exception . '_field');
+        }
+    }
+    
+    /**
+     * Verifica que la fecha y hora sea mayor a la fecha de un campo dado
+     * @param string $value Fecha del campo
+     * @param string $param Nombre del campo a obtener la fecha
+     * @return \DateTime
+     * @throws ValidatorException
+     */
+    public function validMinDateTimeField($value, $param) {
+        return $this->validMinDateField($value, $param, $this->config['date_time_format'], 'date_time');
+    }
+    
+    /**
+     * Verifica que la fecha y hora sea mayor a la fecha de un campo dado
+     * @param string $value Fecha del campo
+     * @param string $param Nombre del campo a obtener la fecha
+     * @return \DateTime
+     * @throws ValidatorException
+     */
+    public function validMaxDateTimeField($value, $param) {
+        return $this->validMaxDateField($value, $param, $this->config['date_time_format'], 'date_time');
+    }
+    
+    /**
+     * Verifica que la hora sea mayor a la fecha de un campo dado
+     * @param string $value Fecha del campo
+     * @param string $param Nombre del campo a obtener la fecha
+     * @return \DateTime
+     * @throws ValidatorException
+     */
+    public function validMinTimeField($value, $param) {
+        return $this->validMinDateField($value, $param, $this->config['time_format'], 'time');
+    }
+    
+    /**
+     * Verifica que la hora sea mayor a la fecha de un campo dado
+     * @param string $value Fecha del campo
+     * @param string $param Nombre del campo a obtener la fecha
+     * @return \DateTime
+     * @throws ValidatorException
+     */
+    public function validMaxTimeField($value, $param) {
+        return $this->validMaxDateField($value, $param, $this->config['time_format'], 'time');
+    }
+    
+    /**
+     * Verifica que la hora sea mayor a la fecha de un campo dado
+     * @param string $value Fecha del campo
+     * @param string $param Nombre del campo a obtener la fecha
+     * @return \DateTime
+     * @throws ValidatorException
+     */
+    public function validJson($value, $param) {
+        if ($value && $param) {
+            if (json_last_error() !== JSON_ERROR_NONE && $this->config['return_boolean']) {
+                return FALSE;
+            } elseif (json_last_error() !== JSON_ERROR_NONE ) {
+                throw new ValidatorException('json');
+            }
+        }
+    }
+    
     /**
      * Valida las reglas actuales
      * @param array $values Valores a verificar
@@ -610,7 +985,8 @@ class Validator {
      */
     public function validate(array $values) {
         $return = TRUE;
-        foreach ($this->_rules as $field => $rules) {
+        $this->values = $values;
+        foreach ($this->rules as $field => $rules) {
             foreach ($rules as $rule) {
                 try {
                     if ( key_exists($field, $values) ) {
@@ -618,16 +994,53 @@ class Validator {
                         $this->{$function} ( $values[$field], $rule->param );  
                     }
                 } catch (ValidatorException $e) {
-                    $param = is_object($rule->param) ? 'callback' : (is_array($rule->param) ? Str::natjoin($rule->param) : $rule->param);
-                    $message = preg_replace(['/\{field\}/', '/\{value\}/', '/\{param\}/'],
-                            [$field, $values[$field], (string)$param], $rule->message ? $rule->message : $e->getMessage());
+                    $config = $this->config;
+                    
+                    $param = is_callable($rule->param) 
+                        ? 'callback' 
+                        : (is_array($rule->param) && !in_array($rule->name, ['range_date', 'range_date_time', 'range_time'])
+                            ? Str::natjoin($rule->param) 
+                            : (in_array($rule->name, ['range_date', 'range_date_time', 'range_time'])
+                                ? Str::natjoin(array_map(function(\DateTime $date) use ($rule, $config) {
+                                        return $date->format(
+                                            $rule->name == 'range_date'
+                                                ? $config['date_format']
+                                                : ($rule->name == 'range_date_time'
+                                                    ? $config['date_time_format']
+                                                    : $config['time_format']
+                                                )
+                                        );
+                                    }, $rule->param))
+                                : ( in_array($rule->name, ['min_date', 'max_date', 'min_date_time', 'max_date_time', 'min_time', 'max_time'])
+                                    ? $rule->param->format(
+                                        in_array($rule->name, ['min_date', 'max_date'])
+                                            ? $config['date_format']
+                                            : (in_array($rule->name, ['min_date_time', 'max_date_time'])
+                                                ? $config['date_time_format']
+                                                : $config['time_format']
+                                            )
+                                        )
+                                    : ( in_array($rule->name, ['min_size', 'max_size'])
+                                        ? Str::bytestostr($rule->param)
+                                        : $rule->param
+                                    )
+                                )
+                            )
+                        );
+                    $message = preg_replace(['/\{field\}/', '/\{value\}/', '/\{param\}/'], [
+                            $field, 
+                            is_array($values[$field]) ? Str::natjoin($values[$field]) : $values[$field],
+                            (string)$param
+                        ], $rule->message ? $rule->message : $e->getMessage()
+                    );
+                    
                     switch ($rule->level) {
                         case Rule::ERROR    :
-                            $this->_errors[$field] = $message;
+                            $this->errors[$field] = $message;
                             $return = FALSE;
                             break;
                         case Rule::WARNING  : 
-                            $this->_warnings[$field] = $message;
+                            $this->warnings[$field] = $message;
                             break;
                     }
                 }
@@ -657,13 +1070,13 @@ class Validator {
                     'message' => $message
                 ] + $data
                         ;
-                $this->_rules[$field][$r['rule'] == NULL ? $data[0] : $r['rule']] = new Rule($r['rule'] == NULL ? $data[0] : $r['rule'],
+                $this->rules[$field][$r['rule'] == NULL ? $data[0] : $r['rule']] = new Rule($r['rule'] == NULL ? $data[0] : $r['rule'],
                         $r['param'] == NULL && key_exists(1, $data) ? $data[1] : $r['param'],
                         $r['level'] == NULL && key_exists(2, $data) ? $data[2] : $r['level'],
                         $r['message'] == NULL && key_exists(3, $data) ? $data[3] : $r['message']);
             }
         } else {
-            $this->_rules[$field][$rule] = new Rule($rule, $param, $level, $message);
+            $this->rules[$field][$rule] = new Rule($rule, $param, $level, $message);
         }
 
         return $this;
@@ -674,7 +1087,7 @@ class Validator {
      * @return array
      */
     public function getErrors() { 
-        return $this->_errors;
+        return $this->errors;
     }
     
     /**
@@ -682,6 +1095,6 @@ class Validator {
      * @return array
      */
     public function getWarnings() {
-        return $this->_warnings;
+        return $this->warnings;
     }
 }
