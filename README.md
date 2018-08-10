@@ -62,7 +62,6 @@ var_dump($validator->getWarnings()); //array(size=1) 'field_3' => 'Debe ser un v
 
 ## Errores y Advertencias
 
-Al validador se le pueden configurar errores y advertencias, cuando un campo tiene una regla de validación 
-como **Rule::WARNING** y no pasa la comprobación, el validador continúa la operación y retorna TRUE al resultado de la misma.
+Al validador se le pueden configurar errores y advertencias, cuando un campo tiene una regla de validación como **Rule::WARNING** y no pasa la comprobación, el validador continúa la operación y retorna TRUE al resultado de la misma.
 
 Las alertas generadas son recuperadas mediante la función **$validator->getWarnings()**
