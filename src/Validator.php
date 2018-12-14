@@ -501,13 +501,24 @@ class Validator {
      * @throws ValidatorException
      */
     public function validEmail($value) {
-        if ( $value && !preg_match('/^[_a-z0-9-]+(\.[_a-z0-9-]+)*@[a-z0-9-]+(\.[a-z0-9-]+)*(\.[a-z]{2,3})$/', $value) ) {
+        if (is_array($value)) {
+            foreach ($value as $val) {
+                if ( $val && !preg_match('/^[_a-z0-9-]+(\.[_a-z0-9-]+)*@[a-z0-9-]+(\.[a-z0-9-]+)*(\.[a-z]{2,3})$/', $val) ) {
+                    if ($this->config['return_boolean']) {
+                        return FALSE;
+                    } else {
+                        throw new ValidatorException('email');
+                    }
+                }
+            }
+        } elseif ( $value && !preg_match('/^[_a-z0-9-]+(\.[_a-z0-9-]+)*@[a-z0-9-]+(\.[a-z0-9-]+)*(\.[a-z]{2,3})$/', $value) ) {
             if ($this->config['return_boolean']) {
                 return FALSE;
             } else {
                 throw new ValidatorException('email');
             }
         }
+        
         return TRUE;
     }
     
