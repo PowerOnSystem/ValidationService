@@ -4,7 +4,7 @@
     "description": "Servicio de validacion de campos universal.",
     "keywords": ["validation", "validator", "validation rules"],
     "homepage": "https://github.com/poweronsystem/validationservice",
-    "license": "GPL",
+    "license": "MIT",
     "authors": [
         {
             "name": "Lucas Sosa",
