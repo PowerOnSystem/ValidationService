@@ -287,7 +287,7 @@ class Rule {
     
     public function validateRangeLength($name, $param) {
         $this->validateRange($name, $param);
-        if ( count(array_filter($param, 'is_integer')) != 2 ) {
+        if ( count(array_filter($param, 'is_numeric')) != 2 ) {
             throw new \InvalidArgumentException(sprintf('El parámetro de la regla (%s) debe tener elementos con valor numérico', $name));
         }
     }
